@@ -15,6 +15,25 @@
   (byte & 0x02 ? '1' : '0'), \
   (byte & 0x01 ? '1' : '0') 
 
+#define SHORT_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c"
+#define SHORT_TO_BINARY(short)  \
+  (short & 0x8000 ? '1' : '0'), \
+  (short & 0x4000 ? '1' : '0'), \
+  (short & 0x2000 ? '1' : '0'), \
+  (short & 0x1000 ? '1' : '0'), \
+  (short & 0x0800 ? '1' : '0'), \
+  (short & 0x0400 ? '1' : '0'), \
+  (short & 0x0200 ? '1' : '0'), \
+  (short & 0x0100 ? '1' : '0'), \
+  (short & 0x80 ? '1' : '0'), \
+  (short & 0x40 ? '1' : '0'), \
+  (short & 0x20 ? '1' : '0'), \
+  (short & 0x10 ? '1' : '0'), \
+  (short & 0x08 ? '1' : '0'), \
+  (short & 0x04 ? '1' : '0'), \
+  (short & 0x02 ? '1' : '0'), \
+  (short & 0x01 ? '1' : '0') 
+
 /* TODO: Check for endian-ness */
 int get_next_int(char** buffer_read)
 {
@@ -39,6 +58,7 @@ unsigned short get_next_short(char** buffer_read)
 {
     unsigned short result;
     unsigned short byte_one;
+    unsigned short zero;
 
 #ifdef VERBOSE_DEBUGGING
     printf("Getting next short.\n");
@@ -47,8 +67,10 @@ unsigned short get_next_short(char** buffer_read)
 #endif
 
     byte_one = ((unsigned short)(*buffer_read)[0] << 8);
-    result = (*buffer_read)[1] | byte_one;
-    result = -64;
+    zero = 0;
+    result = zero | (unsigned short)(*buffer_read)[1];
+    result = 192;
+    printf("Result: "SHORT_TO_BINARY_PATTERN"\n", SHORT_TO_BINARY(result));
     *buffer_read += 2;
 
     return result;
