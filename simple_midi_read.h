@@ -2,7 +2,18 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* #define VERBOSE_DEBUGGING */
+#define VERBOSE_DEBUGGING 
+
+#define BYTE_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c"
+#define BYTE_TO_BINARY(byte)  \
+  (byte & 0x80 ? '1' : '0'), \
+  (byte & 0x40 ? '1' : '0'), \
+  (byte & 0x20 ? '1' : '0'), \
+  (byte & 0x10 ? '1' : '0'), \
+  (byte & 0x08 ? '1' : '0'), \
+  (byte & 0x04 ? '1' : '0'), \
+  (byte & 0x02 ? '1' : '0'), \
+  (byte & 0x01 ? '1' : '0') 
 
 /* TODO: Check for endian-ness */
 int get_next_int(char** buffer_read)
@@ -24,17 +35,20 @@ int get_next_int(char** buffer_read)
 }
 
 /* TODO: Figure out fixed-width implementation if possible. */
-short get_next_short(char** buffer_read)
+unsigned short get_next_short(char** buffer_read)
 {
-    short result;
+    unsigned short result;
+    unsigned short byte_one;
 
 #ifdef VERBOSE_DEBUGGING
     printf("Getting next short.\n");
-    printf("Byte 0: %.2x\n", (*buffer_read)[0] & 0xff);
-    printf("Byte 1: %.2x\n", (*buffer_read)[1] & 0xff);
+    printf("Byte 0: "BYTE_TO_BINARY_PATTERN"\n", BYTE_TO_BINARY((*buffer_read)[0]));
+    printf("Byte 1: "BYTE_TO_BINARY_PATTERN"\n", BYTE_TO_BINARY((*buffer_read)[1]));
 #endif
 
-    result = (*buffer_read)[1] | ((short)(*buffer_read)[0] << 8);
+    byte_one = ((unsigned short)(*buffer_read)[0] << 8);
+    result = (*buffer_read)[1] | byte_one;
+    result = -64;
     *buffer_read += 2;
 
     return result;
@@ -48,7 +62,9 @@ int read_midi_file(char* filename)
     char* buffer_read;
     int i;
     int header_chunklen;
-    short format;
+    unsigned short format;
+    unsigned short ntracks;
+    unsigned short tickdiv;
 
     file_ptr = fopen(filename, "rb");
     if (!file_ptr)
@@ -103,8 +119,25 @@ int read_midi_file(char* filename)
     }
     else
     {
-        printf("Do not recognize MIDI format %d.\n", format);
-        return 1;
+        printf("Do not recognize MIDI format %hu.\n", format);
+        /*return 1;*/
+    }
+
+    ntracks = get_next_short(&buffer_read);
+    printf("Number of tracks in this file: %hu.\n", ntracks);
+
+    if (buffer_read[0] & (1<<15))
+    {
+        printf("This file is governed by timecode.\n");
+        /* TODO: Handle timecode case. */
+        buffer_read += 2;
+    }
+    else
+    {
+        printf("This file is governed by metrical timing.\n");
+        tickdiv = get_next_short(&buffer_read);
+        printf("THE HECK "BYTE_TO_BINARY_PATTERN"\n", BYTE_TO_BINARY(*(char*)(&tickdiv)));
+        printf("THE HECK "BYTE_TO_BINARY_PATTERN"\n", BYTE_TO_BINARY(*((char*)(&tickdiv) + 1)));
     }
 
     printf("All good so far!\n");
