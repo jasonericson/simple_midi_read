@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define VERBOSE_DEBUGGING 
+/*#define VERBOSE_DEBUGGING */
 
 #define BYTE_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c"
 #define BYTE_TO_BINARY(byte)  \
@@ -35,7 +35,7 @@
   (short & 0x01 ? '1' : '0') 
 
 /* TODO: Check for endian-ness */
-int get_next_int(char** buffer_read)
+int get_next_int(unsigned char** buffer_read)
 {
     int result;
 
@@ -54,11 +54,9 @@ int get_next_int(char** buffer_read)
 }
 
 /* TODO: Figure out fixed-width implementation if possible. */
-unsigned short get_next_short(char** buffer_read)
+unsigned short get_next_short(unsigned char** buffer_read)
 {
     unsigned short result;
-    unsigned short byte_one;
-    unsigned short zero;
 
 #ifdef VERBOSE_DEBUGGING
     printf("Getting next short.\n");
@@ -66,11 +64,7 @@ unsigned short get_next_short(char** buffer_read)
     printf("Byte 1: "BYTE_TO_BINARY_PATTERN"\n", BYTE_TO_BINARY((*buffer_read)[1]));
 #endif
 
-    byte_one = ((unsigned short)(*buffer_read)[0] << 8);
-    zero = 0;
-    result = zero | (unsigned short)(*buffer_read)[1];
-    result = 192;
-    printf("Result: "SHORT_TO_BINARY_PATTERN"\n", SHORT_TO_BINARY(result));
+    result = (*buffer_read)[1] | (*buffer_read)[0] << 8;
     *buffer_read += 2;
 
     return result;
@@ -80,8 +74,8 @@ int read_midi_file(char* filename)
 {
     FILE* file_ptr;
     long int file_size;
-    char* full_buffer;
-    char* buffer_read;
+    unsigned char* full_buffer;
+    unsigned char* buffer_read;
     int i;
     int header_chunklen;
     unsigned short format;
@@ -101,13 +95,13 @@ int read_midi_file(char* filename)
     fseek(file_ptr, 0L, SEEK_SET);
 
     /* Read entire file */
-    full_buffer = (char*) malloc(file_size + 1);
-    fread(full_buffer, sizeof(char), file_size, file_ptr);
+    full_buffer = (unsigned char*) malloc(file_size + 1);
+    fread(full_buffer, sizeof(unsigned char), file_size, file_ptr);
     fclose(file_ptr);
     buffer_read = full_buffer;
 
     /* Check for header identifier */
-    if (strncmp(buffer_read, "MThd", 4) != 0)
+    if (strncmp((char*)buffer_read, "MThd", 4) != 0)
     {
         /* TODO: Separate out verbose logging? */
         printf("MIDI file is missing header identifier 'MThd'.\n");
@@ -158,8 +152,7 @@ int read_midi_file(char* filename)
     {
         printf("This file is governed by metrical timing.\n");
         tickdiv = get_next_short(&buffer_read);
-        printf("THE HECK "BYTE_TO_BINARY_PATTERN"\n", BYTE_TO_BINARY(*(char*)(&tickdiv)));
-        printf("THE HECK "BYTE_TO_BINARY_PATTERN"\n", BYTE_TO_BINARY(*((char*)(&tickdiv) + 1)));
+        printf("Tickdiv value: %hu\n", tickdiv);
     }
 
     printf("All good so far!\n");
