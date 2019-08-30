@@ -2,36 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define BYTE_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c"
-#define BYTE_TO_BINARY(byte)  \
-  (byte & 0x80 ? '1' : '0'), \
-  (byte & 0x40 ? '1' : '0'), \
-  (byte & 0x20 ? '1' : '0'), \
-  (byte & 0x10 ? '1' : '0'), \
-  (byte & 0x08 ? '1' : '0'), \
-  (byte & 0x04 ? '1' : '0'), \
-  (byte & 0x02 ? '1' : '0'), \
-  (byte & 0x01 ? '1' : '0') 
-
-#define SHORT_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c"
-#define SHORT_TO_BINARY(short)  \
-  (short & 0x8000 ? '1' : '0'), \
-  (short & 0x4000 ? '1' : '0'), \
-  (short & 0x2000 ? '1' : '0'), \
-  (short & 0x1000 ? '1' : '0'), \
-  (short & 0x0800 ? '1' : '0'), \
-  (short & 0x0400 ? '1' : '0'), \
-  (short & 0x0200 ? '1' : '0'), \
-  (short & 0x0100 ? '1' : '0'), \
-  (short & 0x80 ? '1' : '0'), \
-  (short & 0x40 ? '1' : '0'), \
-  (short & 0x20 ? '1' : '0'), \
-  (short & 0x10 ? '1' : '0'), \
-  (short & 0x08 ? '1' : '0'), \
-  (short & 0x04 ? '1' : '0'), \
-  (short & 0x02 ? '1' : '0'), \
-  (short & 0x01 ? '1' : '0') 
-
 static int compare_next_string(unsigned char** buffer_read, const char* to_compare)
 {
     int result;
@@ -59,14 +29,6 @@ static int get_next_int(unsigned char** buffer_read)
 {
     int result;
 
-#ifdef SMR_VERBOSE_DEBUGGING
-    printf("Getting next int.\n");
-    printf("Byte 0: %.2x\n", (*buffer_read)[0] & 0xff);
-    printf("Byte 1: %.2x\n", (*buffer_read)[1] & 0xff);
-    printf("Byte 2: %.2x\n", (*buffer_read)[2] & 0xff);
-    printf("Byte 3: %.2x\n", (*buffer_read)[3] & 0xff);
-#endif
-
     result = (*buffer_read)[3] | ((*buffer_read)[2] << 8) | ((*buffer_read)[1] << 16) | ((*buffer_read)[0] << 24);
     *buffer_read += 4;
 
@@ -77,12 +39,6 @@ static int get_next_int(unsigned char** buffer_read)
 static unsigned short get_next_short(unsigned char** buffer_read)
 {
     unsigned short result;
-
-#ifdef SMR_VERBOSE_DEBUGGING
-    printf("Getting next short.\n");
-    printf("Byte 0: "BYTE_TO_BINARY_PATTERN"\n", BYTE_TO_BINARY((*buffer_read)[0]));
-    printf("Byte 1: "BYTE_TO_BINARY_PATTERN"\n", BYTE_TO_BINARY((*buffer_read)[1]));
-#endif
 
     result = (*buffer_read)[1] | (*buffer_read)[0] << 8;
     *buffer_read += 2;
