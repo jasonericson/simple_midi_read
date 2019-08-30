@@ -99,15 +99,36 @@ enum smr_event_type
     Meta_SequencerSpecificEvent = 0xFF7F
 };
 
-struct smr_event_data
+struct smr_event
 {
     smr_int delta_time;
     enum smr_event_type event_type;
+
+    union
+    {
+        smr_int length;
+
+        struct
+        {
+            union
+            {
+                smr_byte note;
+                smr_byte controller;
+            };
+
+            union
+            {
+                smr_byte velocity;
+                smr_byte pressure;
+                smr_byte value;
+            };
+        };
+    };
 };
 
 struct smr_track_data
 {
-    struct smr_event_data* events;
+    struct smr_event* events;
 };
 
 struct smr_midi_data
