@@ -1,7 +1,11 @@
-#include "simple_midi_read.h"
 #include <string.h>
+
+/*#define SMR_VERBOSE_DEBUGGING*/
+#include "simple_midi_read.h"
 
 int main()
 {
-    return read_midi_file("c_scale.mid");
+    struct smr_midi_data result;
+
+    return smr_read_file("c_scale.mid", &result);
 }

@@ -2,8 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/*#define VERBOSE_DEBUGGING */
-
 #define BYTE_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c"
 #define BYTE_TO_BINARY(byte)  \
   (byte & 0x80 ? '1' : '0'), \
@@ -35,11 +33,11 @@
   (short & 0x01 ? '1' : '0') 
 
 /* TODO: Check for endian-ness */
-int get_next_int(unsigned char** buffer_read)
+static int get_next_int(unsigned char** buffer_read)
 {
     int result;
 
-#ifdef VERBOSE_DEBUGGING
+#ifdef SMR_VERBOSE_DEBUGGING
     printf("Getting next int.\n");
     printf("Byte 0: %.2x\n", (*buffer_read)[0] & 0xff);
     printf("Byte 1: %.2x\n", (*buffer_read)[1] & 0xff);
@@ -54,11 +52,11 @@ int get_next_int(unsigned char** buffer_read)
 }
 
 /* TODO: Figure out fixed-width implementation if possible. */
-unsigned short get_next_short(unsigned char** buffer_read)
+static unsigned short get_next_short(unsigned char** buffer_read)
 {
     unsigned short result;
 
-#ifdef VERBOSE_DEBUGGING
+#ifdef SMR_VERBOSE_DEBUGGING
     printf("Getting next short.\n");
     printf("Byte 0: "BYTE_TO_BINARY_PATTERN"\n", BYTE_TO_BINARY((*buffer_read)[0]));
     printf("Byte 1: "BYTE_TO_BINARY_PATTERN"\n", BYTE_TO_BINARY((*buffer_read)[1]));
@@ -70,7 +68,14 @@ unsigned short get_next_short(unsigned char** buffer_read)
     return result;
 }
 
-int read_midi_file(char* filename)
+struct smr_midi_data
+{
+    unsigned short format;
+    unsigned short ntracks;
+    unsigned short tickdiv;
+};
+
+int smr_read_file(char* filename, struct smr_midi_data* result)
 {
     FILE* file_ptr;
     long int file_size;
@@ -78,9 +83,6 @@ int read_midi_file(char* filename)
     unsigned char* buffer_read;
     int i;
     int header_chunklen;
-    unsigned short format;
-    unsigned short ntracks;
-    unsigned short tickdiv;
 
     file_ptr = fopen(filename, "rb");
     if (!file_ptr)
@@ -88,6 +90,8 @@ int read_midi_file(char* filename)
         printf("Unable to open file!\n");
         return 1;
     }
+
+    int thing = 0;
 
     /* Get file size */
     fseek(file_ptr, 0L, SEEK_END);
@@ -120,27 +124,27 @@ int read_midi_file(char* filename)
         return 1;
     }
 
-    format = get_next_short(&buffer_read);
-    if (format == 0)
+    result->format = get_next_short(&buffer_read);
+    if (result->format == 0)
     {
         printf("This is a single-track MIDI file.\n");
     }
-    else if (format == 1)
+    else if (result->format == 1)
     {
         printf("This file contains two or more tracks meant to be played in tandem.\n");
     }
-    else if (format == 2)
+    else if (result->format == 2)
     {
         printf("This file contains one or more tracks meant to be played independently.\n");
     }
     else
     {
-        printf("Do not recognize MIDI format %hu.\n", format);
+        printf("Do not recognize MIDI format %hu.\n", result->format);
         /*return 1;*/
     }
 
-    ntracks = get_next_short(&buffer_read);
-    printf("Number of tracks in this file: %hu.\n", ntracks);
+    result->ntracks = get_next_short(&buffer_read);
+    printf("Number of tracks in this file: %hu.\n", result->ntracks);
 
     if (buffer_read[0] & (1<<15))
     {
@@ -151,8 +155,8 @@ int read_midi_file(char* filename)
     else
     {
         printf("This file is governed by metrical timing.\n");
-        tickdiv = get_next_short(&buffer_read);
-        printf("Tickdiv value: %hu\n", tickdiv);
+        result->tickdiv = get_next_short(&buffer_read);
+        printf("Tickdiv value: %hu\n", result->tickdiv);
     }
 
     printf("All good so far!\n");
