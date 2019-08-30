@@ -53,3 +53,9 @@ dkms.conf
 
 # Visual Studio
 .vs/
+
+# Xcode
+xcode/
+
+# Specific files
+test
