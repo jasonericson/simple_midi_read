@@ -60,6 +60,12 @@ static uint32_t get_next_variable_length_int(uint8_t** buffer_read)
     return result;
 }
 
+enum smr_time_type
+{
+    SMR_TT_metrical,
+    SMR_TT_timecode
+};
+
 enum smr_event_type
 {
     Midi_NoteOff = 0x80,
@@ -163,14 +169,23 @@ struct smr_midi_data
 {
     uint16_t format;
     uint16_t ntracks;
-    uint16_t tickdiv;
+    enum smr_time_type time_type;
+    union
+    {
+        uint16_t tickdiv;
+        struct
+        {
+            uint8_t fps;
+            uint8_t subframe_resolution;
+        };
+    };
     struct smr_track_data* tracks;
 };
 
 int smr_read_file(char* filename, struct smr_midi_data* file_data)
 {
     FILE* file_ptr;
-    int64_t file_size;
+    long int file_size;
     uint8_t* full_buffer;
     uint8_t* buffer_read;
     uint32_t header_chunklen;
@@ -237,12 +252,18 @@ int smr_read_file(char* filename, struct smr_midi_data* file_data)
 
     if (buffer_read[0] & (1<<15))
     {
+        /* TODO: Test timecode */
+        file_data->time_type = SMR_TT_timecode;
         printf("This file is governed by timecode.\n");
-        /* TODO: Handle timecode case. */
-        buffer_read += 2;
+        /* FPS comes in as a negative value for some reason, this flips it to positive. */
+        file_data->fps = 0 - get_next_byte(&buffer_read);
+        file_data->subframe_resolution = get_next_byte(&buffer_read);
+        printf("FPS value: %d\n", file_data->fps);
+        printf("Sub-frame resolution: %d\n", file_data->subframe_resolution);
     }
     else
     {
+        file_data->time_type = SMR_TT_metrical;
         printf("This file is governed by metrical timing.\n");
         file_data->tickdiv = get_next_short(&buffer_read);
         printf("Tickdiv value: %hu\n", file_data->tickdiv);
