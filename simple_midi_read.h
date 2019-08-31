@@ -36,6 +36,17 @@ static uint32_t get_next_int(uint8_t** buffer_read)
     return result;
 }
 
+static uint32_t get_next_int24(uint8_t** buffer_read)
+{
+    uint32_t result;
+
+    result = 0;
+    result = (*buffer_read)[2] | ((*buffer_read)[1] << 8) | ((*buffer_read)[0] << 16);
+    *buffer_read += 3;
+
+    return result;
+}
+
 /* TODO: Figure out fixed-width implementation if possible. */
 static uint16_t get_next_short(uint8_t** buffer_read)
 {
@@ -116,6 +127,7 @@ struct smr_event
                 {
                     uint8_t note;
                     uint8_t controller;
+                    uint8_t program;
                     uint8_t pp;
                     uint8_t hr;
                     uint8_t nn;
@@ -134,6 +146,7 @@ struct smr_event
 
                 union
                 {
+                    uint8_t channel;
                     uint8_t se;
                     uint8_t cc;
                 };
@@ -153,7 +166,10 @@ struct smr_event
         {
             uint8_t* message;
             uint8_t* bytes;
+            uint8_t* data;
             char* text;
+
+            uint32_t tempo;
 
             uint8_t ff;
         };
@@ -162,6 +178,7 @@ struct smr_event
 
 struct smr_track_data
 {
+    uint32_t nevents;
     struct smr_event* events;
 };
 
@@ -180,6 +197,7 @@ struct smr_midi_data
         };
     };
     struct smr_track_data* tracks;
+    uint8_t* mem_block;
 };
 
 int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
@@ -187,6 +205,11 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
     uint8_t* buffer_read;
     uint32_t header_chunklen;
     int32_t i;
+    uint32_t total_alloc_size;
+    uint8_t* mem_ptr;
+    struct smr_event* event_ptr;
+    uint8_t* all_tracks_start;
+    uint32_t total_num_events;
 
     buffer_read = buffer;
 
@@ -250,14 +273,16 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
         printf("Tickdiv value: %hu\n", file_data->tickdiv);
     }
 
-    /*file_data->tracks = (struct smr_track_data*) malloc(file_data->ntracks * sizeof(struct smr_track_data));*/
+    total_alloc_size = file_data->ntracks * sizeof(struct smr_track_data);
+    all_tracks_start = buffer_read;
+    total_num_events = 0;
 
     /* Add all tracks. */
     for (i = 0; i < file_data->ntracks; ++i)
     {
         uint32_t track_chunklen;
         uint8_t* track_start;
-        uint32_t event_count;
+        uint32_t track_num_events;
 
         if (compare_next_string(&buffer_read, "MTrk") != 0)
         {
@@ -270,7 +295,7 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
 
         printf("- Track %d:\n", i);
 
-        event_count = 0;
+        track_num_events = 0;
         /* TODO: Maybe ignore track length and just look for End of Track event? */
         while (buffer_read - track_start < track_chunklen)
         {
@@ -281,7 +306,7 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
             uint32_t event_chunklen;
 
             delta_time = get_next_variable_length_int(&buffer_read);
-            printf("--- Event %d | Delta Time = %u | Type = ", event_count, delta_time);
+            printf("--- Event %d | Delta Time = %u | Type = ", track_num_events, delta_time);
             status_byte = get_next_byte(&buffer_read);
             status_byte_top = status_byte & 0xF0;
             if (status_byte_top >= 0x80 & status_byte_top < 0xF0)
@@ -344,6 +369,8 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
                         /* Can't happen. */
                         break;
                 }
+
+                total_alloc_size += event_chunklen;
             }
             else if (status_byte == 0xFF)
             {
@@ -351,6 +378,8 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
 
                 meta_event_type = get_next_byte(&buffer_read);
                 event_type = meta_event_type | (status_byte << 8);
+                event_chunklen = get_next_variable_length_int(&buffer_read);
+
                 switch (event_type)
                 {
                     case Meta_SequenceNumber:
@@ -358,30 +387,39 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
                         break;
                     case Meta_Text:
                         printf("Meta - Text\n");
+                        total_alloc_size += event_chunklen + 1;
                         break;
                     case Meta_Copyright:
                         printf("Meta - Copyright\n");
+                        total_alloc_size += event_chunklen + 1;
                         break;
                     case Meta_TrackName:
                         printf("Meta - Track Name\n");
+                        total_alloc_size += event_chunklen + 1;
                         break;
                     case Meta_InstrumentName:
                         printf("Meta - Instrument Name\n");
+                        total_alloc_size += event_chunklen + 1;
                         break;
                     case Meta_Lyric:
                         printf("Meta - Lyric\n");
+                        total_alloc_size += event_chunklen + 1;
                         break;
                     case Meta_Marker:
                         printf("Meta - Marker\n");
+                        total_alloc_size += event_chunklen + 1;
                         break;
                     case Meta_CuePoint:
                         printf("Meta - Cue Point\n");
+                        total_alloc_size += event_chunklen + 1;
                         break;
                     case Meta_ProgramName:
                         printf("Meta - Program Name\n");
+                        total_alloc_size += event_chunklen + 1;
                         break;
                     case Meta_DeviceName:
                         printf("Meta - Device Name\n");
+                        total_alloc_size += event_chunklen + 1;
                         break;
                     case Meta_MidiChannelPrefix:
                         printf("Meta - MIDI Channel Prefix\n");
@@ -406,13 +444,12 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
                         break;
                     case Meta_SequencerSpecificEvent:
                         printf("Meta - Sequencer Specific Event\n");
+                        total_alloc_size += event_chunklen;
                         break;
                     default:
                         printf("\nDo not recognize meta event type %0.2x.\n", meta_event_type & 0xFF);
                         return 1;
                 }
-
-                event_chunklen = get_next_variable_length_int(&buffer_read);
             }
             else
             {
@@ -421,10 +458,198 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
             }
 
             buffer_read += event_chunklen;
-            event_count += 1;
+            track_num_events += 1;
         }
 
+        total_num_events += track_num_events;
+    }
 
+    total_alloc_size += total_num_events * sizeof(struct smr_event);
+    file_data->mem_block = (uint8_t*)malloc(total_alloc_size);
+    mem_ptr = file_data->mem_block;
+
+    file_data->tracks = (struct smr_track_data*)mem_ptr;
+    mem_ptr = (uint8_t*)(file_data->tracks + file_data->ntracks);
+    event_ptr = (struct smr_event*)mem_ptr;
+    mem_ptr = (uint8_t*)(event_ptr + total_num_events);
+    /* Rewind back to beginning of all track data. */
+    buffer_read = all_tracks_start;
+
+    for (i = 0; i < file_data->ntracks; ++i)
+    {
+        struct smr_track_data track_data;
+        uint32_t track_chunklen;
+        uint8_t* track_start;
+
+        /* Skip reading track header. */
+        buffer_read += 4;
+
+        track_chunklen = get_next_int(&buffer_read);
+        track_start = buffer_read;
+        track_data.events = event_ptr;
+
+        track_data.nevents = 0;
+
+        while (buffer_read - track_start < track_chunklen)
+        {
+            struct smr_event event;
+            uint8_t status_byte;
+            uint8_t status_byte_top;
+            uint32_t event_chunklen;
+
+            event.delta_time = get_next_variable_length_int(&buffer_read);
+            status_byte = get_next_byte(&buffer_read);
+            status_byte_top = status_byte & 0xF0;
+            if (status_byte_top >= 0x80 & status_byte_top < 0xF0)
+            {
+                /* MIDI event */
+                event.event_type = status_byte_top;
+                /* Getting bottom nibble as channel. */
+                event.channel = status_byte & 0x0F;
+
+                switch (event.event_type)
+                {
+                    case Midi_NoteOff:
+                    case Midi_NoteOn:
+                        event.note = get_next_byte(&buffer_read);
+                        event.velocity = get_next_byte(&buffer_read);
+                        break;
+                    case Midi_PolyphonicPressure:
+                        event.note = get_next_byte(&buffer_read);
+                        event.pressure = get_next_byte(&buffer_read);
+                        break;
+                    case Midi_Controller:
+                        event.controller = get_next_byte(&buffer_read);
+                        event.value = get_next_byte(&buffer_read);
+                        break;
+                    case Midi_ProgramChange:
+                        event.program = get_next_byte(&buffer_read);
+                        break;
+                    case Midi_ChannelPressure:
+                        event.pressure = get_next_byte(&buffer_read);
+                        break;
+                    case Midi_PitchBend:
+                        /* TODO: Test this, I don't know that this how the pitch bend value is supposed to be read in. */
+                        event.pitch_bend = get_next_short(&buffer_read);
+                        break;
+                    default:
+                        /* Can't happen. */
+                        break;
+                }
+            }
+            else if (status_byte == 0xF0 || status_byte == 0xF7)
+            {
+                uint32_t message_index;
+
+                /* SysEx event */
+                event.event_type = status_byte;
+                event.length = get_next_variable_length_int(&buffer_read);
+                event.message = (uint8_t*)mem_ptr;
+
+                for (message_index = 0; message_index < event.length; ++message_index)
+                {
+                    event.message[message_index] = get_next_byte(&buffer_read);
+                }
+
+                mem_ptr += event.length;
+            }
+            else if (status_byte == 0xFF)
+            {
+                uint8_t meta_event_type;
+
+                meta_event_type = get_next_byte(&buffer_read);
+                event.event_type = meta_event_type | (status_byte << 8);
+                event.length = get_next_variable_length_int(&buffer_read);
+
+                switch (event.event_type)
+                {
+                    case Meta_SequenceNumber:
+                        event.ss_ss = get_next_short(&buffer_read);
+                        break;
+                    case Meta_Text:
+                    case Meta_Copyright:
+                    case Meta_TrackName:
+                    case Meta_InstrumentName:
+                    case Meta_Lyric:
+                    case Meta_Marker:
+                    case Meta_CuePoint:
+                    case Meta_ProgramName:
+                    case Meta_DeviceName:
+                    {
+                        uint32_t text_index;
+
+                        event.text = (char*)mem_ptr;
+
+                        for (text_index = 0; text_index < event.length; ++text_index)
+                        {
+                            event.text[text_index] = (char)get_next_byte(&buffer_read);
+                        }
+
+                        /* Add null terminator. */
+                        event.text[event.length] = 0;
+                        mem_ptr += event.length + 1;
+                        break;
+                    }
+                    case Meta_MidiChannelPrefix:
+                        event.cc = get_next_byte(&buffer_read);
+                        break;
+                    case Meta_MidiPort:
+                        event.pp = get_next_byte(&buffer_read);
+                        break;
+                    case Meta_EndOfTrack:
+                        /* Empty event. */
+                        break;
+                    case Meta_Tempo:
+                        event.tempo = get_next_int24(&buffer_read);
+                        break;
+                    case Meta_SmpteOffset:
+                        event.hr = get_next_byte(&buffer_read);
+                        event.mn = get_next_byte(&buffer_read);
+                        event.se = get_next_byte(&buffer_read);
+                        event.fr = get_next_byte(&buffer_read);
+                        event.ff = get_next_byte(&buffer_read);
+                        break;
+                    case Meta_TimeSignature:
+                        event.nn = get_next_byte(&buffer_read);
+                        event.dd = get_next_byte(&buffer_read);
+                        event.cc = get_next_byte(&buffer_read);
+                        event.bb = get_next_byte(&buffer_read);
+                        break;
+                    case Meta_KeySignature:
+                        event.sf = get_next_byte(&buffer_read);
+                        event.mi = get_next_byte(&buffer_read);
+                        break;
+                    case Meta_SequencerSpecificEvent:
+                    {
+                        uint32_t data_index;
+
+                        event.data = (uint8_t*)mem_ptr;
+
+                        for (data_index = 0; data_index < event.length; ++data_index)
+                        {
+                            event.data[data_index] = (uint8_t) get_next_byte(&buffer_read);
+                        }
+
+                        mem_ptr += event.length;
+                        break;
+                    }
+                    default:
+                        /* Can't happen. */
+                        break;
+                }
+            }
+            else
+            {
+                printf("\nDo not recognize status byte %0.2x.\n", status_byte & 0xFF);
+                return 1;
+            }
+
+            track_data.nevents += 1;
+            *event_ptr = event;
+            event_ptr += 1;
+        }
+
+        file_data->tracks[i] = track_data;
     }
 
     printf("\nFinished reading file!\n");
