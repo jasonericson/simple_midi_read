@@ -182,32 +182,13 @@ struct smr_midi_data
     struct smr_track_data* tracks;
 };
 
-int smr_read_file(char* filename, struct smr_midi_data* file_data)
+int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
 {
-    FILE* file_ptr;
-    long int file_size;
-    uint8_t* full_buffer;
     uint8_t* buffer_read;
     uint32_t header_chunklen;
     int32_t i;
 
-    file_ptr = fopen(filename, "rb");
-    if (!file_ptr)
-    {
-        printf("Unable to open file!\n");
-        return 1;
-    }
-
-    /* Get file size */
-    fseek(file_ptr, 0L, SEEK_END);
-    file_size = ftell(file_ptr);
-    fseek(file_ptr, 0L, SEEK_SET);
-
-    /* Read entire file */
-    full_buffer = (uint8_t*) malloc(file_size + 1);
-    fread(full_buffer, sizeof(uint8_t), file_size, file_ptr);
-    fclose(file_ptr);
-    buffer_read = full_buffer;
+    buffer_read = buffer;
 
     /* Check for header identifier */
     if (compare_next_string(&buffer_read, "MThd") != 0)
@@ -222,7 +203,7 @@ int smr_read_file(char* filename, struct smr_midi_data* file_data)
     header_chunklen = get_next_int(&buffer_read);
     if (header_chunklen != 6)
     {
-        printf("This MIDI file (%s) is not compatible with this version of the parser.\n", filename);
+        printf("This MIDI file is not compatible with this version of the parser.\n");
         /* VERBOSE */
         printf("Expected header chunk size of 6 bytes, got %d.\n", header_chunklen);
         return 1;
@@ -276,7 +257,7 @@ int smr_read_file(char* filename, struct smr_midi_data* file_data)
     {
         uint32_t track_chunklen;
         uint8_t* track_start;
-        uint32_t event_num;
+        uint32_t event_count;
 
         if (compare_next_string(&buffer_read, "MTrk") != 0)
         {
@@ -289,7 +270,7 @@ int smr_read_file(char* filename, struct smr_midi_data* file_data)
 
         printf("- Track %d:\n", i);
 
-        event_num = 0;
+        event_count = 0;
         /* TODO: Maybe ignore track length and just look for End of Track event? */
         while (buffer_read - track_start < track_chunklen)
         {
@@ -300,7 +281,7 @@ int smr_read_file(char* filename, struct smr_midi_data* file_data)
             uint32_t event_chunklen;
 
             delta_time = get_next_variable_length_int(&buffer_read);
-            printf("--- Event %d | Delta Time = %u | Type = ", event_num, delta_time);
+            printf("--- Event %d | Delta Time = %u | Type = ", event_count, delta_time);
             status_byte = get_next_byte(&buffer_read);
             status_byte_top = status_byte & 0xF0;
             if (status_byte_top >= 0x80 & status_byte_top < 0xF0)
@@ -440,10 +421,43 @@ int smr_read_file(char* filename, struct smr_midi_data* file_data)
             }
 
             buffer_read += event_chunklen;
-            event_num += 1;
+            event_count += 1;
         }
+
+
     }
 
     printf("\nFinished reading file!\n");
     return 0;
+}
+
+int smr_read_file(char* filename, struct smr_midi_data* file_data)
+{
+    FILE* file_ptr;
+    long int file_size;
+    uint8_t* buffer;
+    int return_code;
+
+    file_ptr = fopen(filename, "rb");
+    if (!file_ptr)
+    {
+        printf("Unable to open file!\n");
+        return 1;
+    }
+
+    /* Get file size */
+    fseek(file_ptr, 0L, SEEK_END);
+    file_size = ftell(file_ptr);
+    fseek(file_ptr, 0L, SEEK_SET);
+
+    /* Read entire file */
+    buffer = (uint8_t*) malloc(file_size + 1);
+    fread(buffer, sizeof(uint8_t), file_size, file_ptr);
+    fclose(file_ptr);
+
+    return_code = smr_read_byte_array(buffer, file_data);
+
+    free(buffer);
+
+    return return_code;
 }
