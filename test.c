@@ -211,4 +211,6 @@ int main()
     }
 
     print_midi_data(&midi_data);
+
+    smr_free_midi_data(&midi_data);
 }

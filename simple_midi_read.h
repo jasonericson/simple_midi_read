@@ -197,7 +197,7 @@ struct smr_midi_data
         };
     };
     struct smr_track_data* tracks;
-    uint8_t* mem_block;
+    uint8_t* _mem_block;
 };
 
 int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
@@ -365,8 +365,8 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
     }
 
     total_alloc_size += total_num_events * sizeof(struct smr_event);
-    file_data->mem_block = (uint8_t*)malloc(total_alloc_size);
-    mem_ptr = file_data->mem_block;
+    file_data->_mem_block = (uint8_t*)malloc(total_alloc_size);
+    mem_ptr = file_data->_mem_block;
 
     file_data->tracks = (struct smr_track_data*)mem_ptr;
     mem_ptr = (uint8_t*)(file_data->tracks + file_data->ntracks);
@@ -585,4 +585,11 @@ int smr_read_file(char* filename, struct smr_midi_data* file_data)
     free(buffer);
 
     return return_code;
+}
+
+int smr_free_midi_data(struct smr_midi_data* midi_data)
+{
+    free(midi_data->_mem_block);
+
+    return 0;
 }
