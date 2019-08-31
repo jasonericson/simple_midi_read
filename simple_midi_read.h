@@ -233,44 +233,26 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
     }
 
     file_data->format = get_next_short(&buffer_read);
-    if (file_data->format == 0)
-    {
-        printf("This is a single-track MIDI file.\n");
-    }
-    else if (file_data->format == 1)
-    {
-        printf("This file contains two or more tracks meant to be played in tandem.\n");
-    }
-    else if (file_data->format == 2)
-    {
-        printf("This file contains one or more tracks meant to be played independently.\n");
-    }
-    else
+    if (file_data->format > 2)
     {
         printf("Do not recognize MIDI format %hu.\n", file_data->format);
         /*return 1;*/
     }
 
     file_data->ntracks = get_next_short(&buffer_read);
-    printf("Number of tracks in this file: %hu.\n", file_data->ntracks);
 
     if (buffer_read[0] & (1<<15))
     {
         /* TODO: Test timecode */
         file_data->time_type = SMR_TT_timecode;
-        printf("This file is governed by timecode.\n");
         /* FPS comes in as a negative value for some reason, this flips it to positive. */
         file_data->fps = 0 - get_next_byte(&buffer_read);
         file_data->subframe_resolution = get_next_byte(&buffer_read);
-        printf("FPS value: %d\n", file_data->fps);
-        printf("Sub-frame resolution: %d\n", file_data->subframe_resolution);
     }
     else
     {
         file_data->time_type = SMR_TT_metrical;
-        printf("This file is governed by metrical timing.\n");
         file_data->tickdiv = get_next_short(&buffer_read);
-        printf("Tickdiv value: %hu\n", file_data->tickdiv);
     }
 
     total_alloc_size = file_data->ntracks * sizeof(struct smr_track_data);
@@ -293,8 +275,6 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
         track_chunklen = get_next_int(&buffer_read);
         track_start = buffer_read;
 
-        printf("- Track %d:\n", i);
-
         track_num_events = 0;
         /* TODO: Maybe ignore track length and just look for End of Track event? */
         while (buffer_read - track_start < track_chunklen)
@@ -306,7 +286,6 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
             uint32_t event_chunklen;
 
             delta_time = get_next_variable_length_int(&buffer_read);
-            printf("--- Event %d | Delta Time = %u | Type = ", track_num_events, delta_time);
             status_byte = get_next_byte(&buffer_read);
             status_byte_top = status_byte & 0xF0;
             if (status_byte_top >= 0x80 & status_byte_top < 0xF0)
@@ -318,32 +297,15 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
                 switch (event_type)
                 {
                     case Midi_NoteOff:
-                        printf("MIDI - Note Off\n");
-                        event_chunklen = 2;
-                        break;
                     case Midi_NoteOn:
-                        printf("MIDI - Note On\n");
-                        event_chunklen = 2;
-                        break;
                     case Midi_PolyphonicPressure:
-                        printf("MIDI - Polyphonic Pressure\n");
-                        event_chunklen = 2;
-                        break;
                     case Midi_Controller:
-                        printf("MIDI - Controller\n");
-                        event_chunklen = 2;
-                        break;
                     case Midi_PitchBend:
-                        printf("MIDI - Pitch Bend\n");
                         event_chunklen = 2;
                         break;
 
                     case Midi_ProgramChange:
-                        printf("MIDI - Program Change\n");
-                        event_chunklen = 1;
-                        break;
                     case Midi_ChannelPressure:
-                        printf("MIDI - Channel Pressure\n");
                         event_chunklen = 1;
                         break;
                     default:
@@ -357,19 +319,6 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
                 event_type = status_byte;
                 event_chunklen = get_next_variable_length_int(&buffer_read);
 
-                switch (event_type)
-                {
-                    case SysEx_Single:
-                        printf("SysEx - Single\n");
-                        break;
-                    case SysEx_Escape:
-                        printf("SysEx - Escape\n");
-                        break;
-                    default:
-                        /* Can't happen. */
-                        break;
-                }
-
                 total_alloc_size += event_chunklen;
             }
             else if (status_byte == 0xFF)
@@ -382,73 +331,24 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
 
                 switch (event_type)
                 {
-                    case Meta_SequenceNumber:
-                        printf("Meta - Sequence Number\n");
-                        break;
                     case Meta_Text:
-                        printf("Meta - Text\n");
-                        total_alloc_size += event_chunklen + 1;
-                        break;
                     case Meta_Copyright:
-                        printf("Meta - Copyright\n");
-                        total_alloc_size += event_chunklen + 1;
-                        break;
                     case Meta_TrackName:
-                        printf("Meta - Track Name\n");
-                        total_alloc_size += event_chunklen + 1;
-                        break;
                     case Meta_InstrumentName:
-                        printf("Meta - Instrument Name\n");
-                        total_alloc_size += event_chunklen + 1;
-                        break;
                     case Meta_Lyric:
-                        printf("Meta - Lyric\n");
-                        total_alloc_size += event_chunklen + 1;
-                        break;
                     case Meta_Marker:
-                        printf("Meta - Marker\n");
-                        total_alloc_size += event_chunklen + 1;
-                        break;
                     case Meta_CuePoint:
-                        printf("Meta - Cue Point\n");
-                        total_alloc_size += event_chunklen + 1;
-                        break;
                     case Meta_ProgramName:
-                        printf("Meta - Program Name\n");
-                        total_alloc_size += event_chunklen + 1;
-                        break;
                     case Meta_DeviceName:
-                        printf("Meta - Device Name\n");
+                        /* Allocating 1 extra byte for text, to add null terminator. */
                         total_alloc_size += event_chunklen + 1;
-                        break;
-                    case Meta_MidiChannelPrefix:
-                        printf("Meta - MIDI Channel Prefix\n");
-                        break;
-                    case Meta_MidiPort:
-                        printf("Meta - MIDI Port\n");
-                        break;
-                    case Meta_EndOfTrack:
-                        printf("Meta - End of Track\n");
-                        break;
-                    case Meta_Tempo:
-                        printf("Meta - Tempo\n");
-                        break;
-                    case Meta_SmpteOffset:
-                        printf("Meta - SMPTE Offset\n");
-                        break;
-                    case Meta_TimeSignature:
-                        printf("Meta - Time Signature\n");
-                        break;
-                    case Meta_KeySignature:
-                        printf("Meta - Key Signature\n");
                         break;
                     case Meta_SequencerSpecificEvent:
-                        printf("Meta - Sequencer Specific Event\n");
                         total_alloc_size += event_chunklen;
                         break;
                     default:
-                        printf("\nDo not recognize meta event type %0.2x.\n", meta_event_type & 0xFF);
-                        return 1;
+                        /* All other meta events don't need extra allocation space. */
+                        break;
                 }
             }
             else
@@ -652,7 +552,7 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
         file_data->tracks[i] = track_data;
     }
 
-    printf("\nFinished reading file!\n");
+    printf("Finished reading file!\n\n");
     return 0;
 }
 

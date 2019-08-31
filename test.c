@@ -3,41 +3,212 @@
 /*#define SMR_VERBOSE_DEBUGGING*/
 #include "simple_midi_read.h"
 
+void print_midi_data(const struct smr_midi_data* midi_data)
+{
+    int track_index, event_index;
+
+    printf("Format: %d\n", midi_data->format);
+    printf("Time Type: ");
+    switch(midi_data->time_type)
+    {
+        case SMR_TT_metrical:
+            printf("Metrical.\n");
+            printf("- tickdiv = %d\n", midi_data->tickdiv);
+            break;
+        case SMR_TT_timecode:
+            printf("Timecode\n");
+            printf("- fps = %d\n", midi_data->fps);
+            printf("- subframe_resolution = %d\n", midi_data->subframe_resolution);
+            break;
+    }
+
+    printf("\n");
+    printf("Tracks\n");
+    printf("------\n");
+    for (track_index = 0; track_index < midi_data->ntracks; track_index++)
+    {
+        struct smr_track_data* track;
+
+        track = midi_data->tracks + track_index;
+        printf("- Track %d:\n", track_index);
+        for (event_index = 0; event_index < track->nevents; ++event_index)
+        {
+            struct smr_event* event;
+
+            event = track->events + event_index;
+            printf("  - Event %d | Delta Time = %u\n", event_index, event->delta_time);
+            switch(event->event_type)
+            {
+                case Midi_NoteOff:
+                    printf("    - MIDI: Note Off\n");
+                    printf("      - note = %d\n", event->note);
+                    printf("      - velocity = %d\n", event->velocity);
+                    break;
+                case Midi_NoteOn:
+                    printf("    - MIDI: Note On\n");
+                    printf("      - note = %d\n", event->note);
+                    printf("      - velocity = %d\n", event->velocity);
+                    break;
+                case Midi_PolyphonicPressure:
+                    printf("    - MIDI: Polyphonic Pressure\n");
+                    printf("      - note = %d\n", event->note);
+                    printf("      - pressure = %d\n", event->pressure);
+                    break;
+                case Midi_Controller:
+                    printf("    - MIDI: Controller\n");
+                    printf("      - controller = %d\n", event->controller);
+                    printf("      - value = %d\n", event->value);
+                    break;
+                case Midi_ProgramChange:
+                    printf("    - MIDI: Program Change\n");
+                    printf("      - program = %d\n", event->program);
+                    break;
+                case Midi_ChannelPressure:
+                    printf("    - MIDI: Channel Pressure\n");
+                    printf("      - pressure = %d\n", event->pressure);
+                    break;
+                case Midi_PitchBend:
+                    printf("    - MIDI: Pitch Bend\n");
+                    printf("      - pitch_bend = %d\n", event->pitch_bend);
+                    break;
+                case SysEx_Single:
+                    printf("    - SysEx: Single\n");
+                    printf("      - length = %d\n", event->length);
+                    printf("      - message = ");
+                    {
+                        uint32_t msg_index;
+                        for (msg_index = 0; msg_index < event->length; ++msg_index)
+                        {
+                            printf("0x%.2x", event->message[msg_index] & 0xFF);
+                        }
+                    }
+                    printf("\n");
+                    break;
+                case SysEx_Escape:
+                    printf("    - SysEx: Escape\n");
+                    printf("      - length = %d\n", event->length);
+                    printf("      - message = ");
+                    {
+                        uint32_t msg_index;
+                        for (msg_index = 0; msg_index < event->length; ++msg_index)
+                        {
+                            printf("0x%.2x", event->message[msg_index] & 0xFF);
+                        }
+                    }
+                    printf("\n");
+                    break;
+                case Meta_SequenceNumber:
+                    printf("    - Meta: Sequence Number\n");
+                    printf("      - ss ss = %hu\n", event->ss_ss);
+                    break;
+                case Meta_Text:
+                    printf("    - Meta: Text\n");
+                    printf("      - length = %d\n", event->length);
+                    printf("      - text = %s\n", event->text);
+                    break;
+                case Meta_Copyright:
+                    printf("    - Meta: Copyright\n");
+                    printf("      - length = %d\n", event->length);
+                    printf("      - text = %s\n", event->text);
+                    break;
+                case Meta_TrackName:
+                    printf("    - Meta: Track Name\n");
+                    printf("      - length = %d\n", event->length);
+                    printf("      - text = %s\n", event->text);
+                    break;
+                case Meta_InstrumentName:
+                    printf("    - Meta: Instrument Name\n");
+                    printf("      - length = %d\n", event->length);
+                    printf("      - text = %s\n", event->text);
+                    break;
+                case Meta_Lyric:
+                    printf("    - Meta: Lyric\n");
+                    printf("      - length = %d\n", event->length);
+                    printf("      - text = %s\n", event->text);
+                    break;
+                case Meta_Marker:
+                    printf("    - Meta: Marker\n");
+                    printf("      - length = %d\n", event->length);
+                    printf("      - text = %s\n", event->text);
+                    break;
+                case Meta_CuePoint:
+                    printf("    - Meta: Cue Point\n");
+                    printf("      - length = %d\n", event->length);
+                    printf("      - text = %s\n", event->text);
+                    break;
+                case Meta_ProgramName:
+                    printf("    - Meta: Program Name\n");
+                    printf("      - length = %d\n", event->length);
+                    printf("      - text = %s\n", event->text);
+                    break;
+                case Meta_DeviceName:
+                    printf("    - Meta: Device Name\n");
+                    printf("      - length = %d\n", event->length);
+                    printf("      - text = %s\n", event->text);
+                    break;
+                case Meta_MidiChannelPrefix:
+                    printf("    - Meta: MIDI Channel Prefix\n");
+                    printf("      - cc = %.2x\n", event->cc & 0xFF);
+                    break;
+                case Meta_MidiPort:
+                    printf("    - Meta: MIDI Port\n");
+                    printf("      - pp = %.2x\n", event->pp & 0xFF);
+                    break;
+                case Meta_EndOfTrack:
+                    printf("    - Meta: End of Track\n");
+                    break;
+                case Meta_Tempo:
+                    printf("    - Meta: Tempo\n");
+                    printf("      - tempo = %d\n", event->tempo);
+                    break;
+                case Meta_SmpteOffset:
+                    printf("    - Meta: SMPTE Offset\n");
+                    printf("      - hr = %.2x\n", event->hr & 0xFF);
+                    printf("      - mn = %.2x\n", event->mn & 0xFF);
+                    printf("      - se = %.2x\n", event->se & 0xFF);
+                    printf("      - fr = %.2x\n", event->fr & 0xFF);
+                    printf("      - ff = %.2x\n", event->ff & 0xFF);
+                    break;
+                case Meta_TimeSignature:
+                    printf("    - Meta: Time Signature\n");
+                    printf("      - nn = %.2x\n", event->nn & 0xFF);
+                    printf("      - dd = %.2x\n", event->dd & 0xFF);
+                    printf("      - cc = %.2x\n", event->cc & 0xFF);
+                    printf("      - bb = %.2x\n", event->bb & 0xFF);
+                    break;
+                case Meta_KeySignature:
+                    printf("    - Meta: Key Signature\n");
+                    printf("      - sf = %.2x\n", event->sf & 0xFF);
+                    printf("      - mi = %.2x\n", event->mi & 0xFF);
+                    break;
+                case Meta_SequencerSpecificEvent:
+                    printf("    - Meta: Sequencer Specific Event\n");
+                    printf("      - length = %d\n", event->length);
+                    printf("      - data = ");
+                    {
+                        uint32_t data_index;
+                        for (data_index = 0; data_index < event->length; ++data_index)
+                        {
+                            printf("0x%.2x", event->data[data_index] & 0xFF);
+                        }
+                    }
+                    printf("\n");
+                    break;
+            }
+        }
+    }
+}
+
 int main()
 {
-    struct smr_event event;
-    struct smr_midi_data result;
+    struct smr_midi_data midi_data;
+    int result;
 
-    event.delta_time = 127;
-    event.event_type = Midi_NoteOff;
+    result = smr_read_file("c_scale.mid", &midi_data);
+    if (result != 0)
+    {
+        return result;
+    }
 
-    event.length = 0x08040201;
-    event.message = (uint8_t*) 0x8040201008040201;
-
-    printf("length: %d\n", event.length);
-
-    printf("note: 0x%.2x\n", event.note & 0xFF);
-    printf("controller: 0x%.2x\n", event.controller & 0xFF);
-    printf("pp: 0x%.2x\n", event.pp & 0xFF);
-    printf("hr: 0x%.2x\n", event.hr & 0xFF);
-    printf("nn: 0x%.2x\n", event.nn & 0xFF);
-    printf("sf: 0x%.2x\n", event.sf & 0xFF);
-    printf("velocity: 0x%.2x\n", event.velocity & 0xFF);
-    printf("pressure: 0x%.2x\n", event.pressure & 0xFF);
-    printf("value: 0x%.2x\n", event.value & 0xFF);
-    printf("mn: 0x%.2x\n", event.mn & 0xFF);
-    printf("dd: 0x%.2x\n", event.dd & 0xFF);
-    printf("mi: 0x%.2x\n", event.mi & 0xFF);
-    printf("se: 0x%.2x\n", event.se & 0xFF);
-    printf("cc: 0x%.2x\n", event.cc & 0xFF);
-    printf("fr: 0x%.2x\n", event.fr & 0xFF);
-    printf("bb: 0x%.2x\n", event.bb & 0xFF);
-    printf("pitch_bend: 0x%.4x\n", event.pitch_bend & 0xFFFF);
-    printf("ss_ss: 0x%.4x\n", event.ss_ss & 0xFFFF);
-    printf("message: 0x%p\n", (void*)event.message);
-    printf("bytes: 0x%p\n", (void*)event.bytes);
-    printf("text: 0x%p\n", (void*)event.text);
-    printf("ff: 0x%.2x\n", event.ff & 0xFF);
-
-    return smr_read_file("c_scale.mid", &result);
+    print_midi_data(&midi_data);
 }
