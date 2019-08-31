@@ -1,18 +1,12 @@
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-typedef unsigned char smr_byte;
-typedef unsigned short smr_short;
-typedef unsigned int smr_int;
-typedef char smr_char;
-typedef short smr_s_short;
-typedef int smr_s_int;
-
-static int compare_next_string(smr_byte** buffer_read, const char* to_compare)
+static int32_t compare_next_string(uint8_t** buffer_read, const char* to_compare)
 {
-    int result;
-    int string_length;
+    int32_t result;
+    int32_t string_length;
 
     string_length = strlen(to_compare);
     result = strncmp((char*)*buffer_read, to_compare, string_length);
@@ -21,9 +15,9 @@ static int compare_next_string(smr_byte** buffer_read, const char* to_compare)
     return result;
 }
 
-static smr_byte get_next_byte(smr_byte** buffer_read)
+static uint8_t get_next_byte(uint8_t** buffer_read)
 {
-    smr_byte result;
+    uint8_t result;
 
     result = (*buffer_read)[0];
     *buffer_read += 1;
@@ -32,9 +26,9 @@ static smr_byte get_next_byte(smr_byte** buffer_read)
 }
 
 /* TODO: Check for endian-ness */
-static smr_int get_next_int(smr_byte** buffer_read)
+static uint32_t get_next_int(uint8_t** buffer_read)
 {
-    smr_int result;
+    uint32_t result;
 
     result = (*buffer_read)[3] | ((*buffer_read)[2] << 8) | ((*buffer_read)[1] << 16) | ((*buffer_read)[0] << 24);
     *buffer_read += 4;
@@ -43,9 +37,9 @@ static smr_int get_next_int(smr_byte** buffer_read)
 }
 
 /* TODO: Figure out fixed-width implementation if possible. */
-static smr_short get_next_short(smr_byte** buffer_read)
+static uint16_t get_next_short(uint8_t** buffer_read)
 {
-    smr_short result;
+    uint16_t result;
 
     result = (*buffer_read)[1] | (*buffer_read)[0] << 8;
     *buffer_read += 2;
@@ -53,14 +47,14 @@ static smr_short get_next_short(smr_byte** buffer_read)
     return result;
 }
 
-static smr_int get_next_variable_length_int(smr_byte** buffer_read)
+static uint32_t get_next_variable_length_int(uint8_t** buffer_read)
 {
-    smr_int result;
+    uint32_t result;
 
     result = 0;
     do
     {
-        result = (result << 7) | (smr_int)(**buffer_read & 0x7F);
+        result = (result << 7) | (uint32_t)(**buffer_read & 0x7F);
     } while (*(*buffer_read)++ & 0x80);
 
     return result;
@@ -101,26 +95,26 @@ enum smr_event_type
 
 struct smr_event
 {
-    smr_int delta_time;
+    uint32_t delta_time;
     enum smr_event_type event_type;
 
     union
     {
-        smr_int length;
+        uint32_t length;
 
         struct
         {
             union
             {
-                smr_byte note;
-                smr_byte controller;
+                uint8_t note;
+                uint8_t controller;
             };
 
             union
             {
-                smr_byte velocity;
-                smr_byte pressure;
-                smr_byte value;
+                uint8_t velocity;
+                uint8_t pressure;
+                uint8_t value;
             };
         };
     };
@@ -133,20 +127,20 @@ struct smr_track_data
 
 struct smr_midi_data
 {
-    smr_short format;
-    smr_short ntracks;
-    smr_short tickdiv;
+    uint16_t format;
+    uint16_t ntracks;
+    uint16_t tickdiv;
     struct smr_track_data* tracks;
 };
 
 int smr_read_file(char* filename, struct smr_midi_data* file_data)
 {
     FILE* file_ptr;
-    long int file_size;
-    smr_byte* full_buffer;
-    smr_byte* buffer_read;
-    smr_int header_chunklen;
-    int i;
+    int64_t file_size;
+    uint8_t* full_buffer;
+    uint8_t* buffer_read;
+    uint32_t header_chunklen;
+    int32_t i;
 
     file_ptr = fopen(filename, "rb");
     if (!file_ptr)
@@ -161,8 +155,8 @@ int smr_read_file(char* filename, struct smr_midi_data* file_data)
     fseek(file_ptr, 0L, SEEK_SET);
 
     /* Read entire file */
-    full_buffer = (smr_byte*) malloc(file_size + 1);
-    fread(full_buffer, sizeof(smr_byte), file_size, file_ptr);
+    full_buffer = (uint8_t*) malloc(file_size + 1);
+    fread(full_buffer, sizeof(uint8_t), file_size, file_ptr);
     fclose(file_ptr);
     buffer_read = full_buffer;
 
@@ -225,9 +219,9 @@ int smr_read_file(char* filename, struct smr_midi_data* file_data)
     /* Add all tracks. */
     for (i = 0; i < file_data->ntracks; ++i)
     {
-        smr_int track_chunklen;
-        smr_byte* track_start;
-        int event_num;
+        uint32_t track_chunklen;
+        uint8_t* track_start;
+        uint32_t event_num;
 
         if (compare_next_string(&buffer_read, "MTrk") != 0)
         {
@@ -244,11 +238,11 @@ int smr_read_file(char* filename, struct smr_midi_data* file_data)
         /* TODO: Maybe ignore track length and just look for End of Track event? */
         while (buffer_read - track_start < track_chunklen)
         {
-            smr_int delta_time;
-            smr_byte status_byte;
-            smr_byte status_byte_top;
+            uint32_t delta_time;
+            uint8_t status_byte;
+            uint8_t status_byte_top;
             enum smr_event_type event_type;
-            smr_int event_chunklen;
+            uint32_t event_chunklen;
 
             delta_time = get_next_variable_length_int(&buffer_read);
             printf("--- Event %d | Delta Time = %u | Type = ", event_num, delta_time);
@@ -291,6 +285,9 @@ int smr_read_file(char* filename, struct smr_midi_data* file_data)
                         printf("MIDI - Channel Pressure\n");
                         event_chunklen = 1;
                         break;
+                    default:
+                        /* Can't happen. */
+                        break;
                 }
             }
             else if (status_byte == 0xF0 || status_byte == 0xF7)
@@ -307,11 +304,14 @@ int smr_read_file(char* filename, struct smr_midi_data* file_data)
                     case SysEx_Escape:
                         printf("SysEx - Escape\n");
                         break;
+                    default:
+                        /* Can't happen. */
+                        break;
                 }
             }
             else if (status_byte == 0xFF)
             {
-                smr_byte meta_event_type;
+                uint8_t meta_event_type;
 
                 meta_event_type = get_next_byte(&buffer_read);
                 event_type = meta_event_type | (status_byte << 8);
