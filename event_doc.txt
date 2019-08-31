@@ -1,0 +1,130 @@
+Midi_NoteOff {
+    byte note
+    byte velocity
+}
+
+Midi_NoteOn {
+    byte note
+    byte velocity
+}
+
+Midi_PolyphonicPressure {
+    byte note
+    byte pressure
+}
+
+Midi_Controller {
+    byte controller
+    byte value
+}
+
+Midi_ProgramChange {
+    byte program
+}
+
+Midi_ChannelPressure {
+    byte pressure
+}
+
+Midi_PitchBend {
+    short value
+}
+
+SysEx_Single {
+    int length
+    byte[] message
+}
+
+SysEx_Escape {
+    int length
+    byte[] bytes
+}
+
+Meta_SequenceNumber {
+    short ss_ss
+}
+
+Meta_Text {
+    int length
+    char[] text
+}
+
+Meta_Copyright {
+    int length
+    char[] text
+}
+
+Meta_TrackName {
+    int length
+    char[] text
+}
+
+Meta_InstrumentName {
+    int length
+    char[] text
+}
+
+Meta_Lyric {
+    int length
+    char[] text
+}
+
+Meta_Marker {
+    int length
+    char[] text
+}
+
+Meta_CuePoint {
+    int length
+    char[] text
+}
+
+Meta_ProgramName {
+    int length
+    char[] text
+}
+
+Meta_DeviceName {
+    int length
+    char[] text
+}
+
+Meta_MidiChannelPrefix {
+    byte cc
+}
+
+Meta_MidiPort {
+    byte pp
+}
+
+Meta_EndOfTrack {
+}
+
+Meta_Tempo {
+    int tempo
+}
+
+Meta_SmpteOffset {
+    byte hr
+    byte mn
+    byte se
+    byte fr
+    byte ff
+}
+
+Meta_TimeSignature {
+    byte nn
+    byte dd
+    byte cc
+    byte bb
+}
+
+Meta_KeySignature {
+    byte sf
+    byte mi
+}
+
+Meta_SequencerSpecificEvent {
+    int length
+    byte[] data
+}
