@@ -98,24 +98,58 @@ struct smr_event
     uint32_t delta_time;
     enum smr_event_type event_type;
 
-    union
+    struct
     {
-        uint32_t length;
-
-        struct
+        union
         {
-            union
+            uint32_t length;
+
+            struct
             {
-                uint8_t note;
-                uint8_t controller;
+                union
+                {
+                    uint8_t note;
+                    uint8_t controller;
+                    uint8_t pp;
+                    uint8_t hr;
+                    uint8_t nn;
+                    uint8_t sf;
+                };
+
+                union
+                {
+                    uint8_t velocity;
+                    uint8_t pressure;
+                    uint8_t value;
+                    uint8_t mn;
+                    uint8_t dd;
+                    uint8_t mi;
+                };
+
+                union
+                {
+                    uint8_t se;
+                    uint8_t cc;
+                };
+
+                union
+                {
+                    uint8_t fr;
+                    uint8_t bb;
+                };
             };
 
-            union
-            {
-                uint8_t velocity;
-                uint8_t pressure;
-                uint8_t value;
-            };
+            uint16_t pitch_bend;
+            uint16_t ss_ss;
+        };
+
+        union
+        {
+            uint8_t* message;
+            uint8_t* bytes;
+            char* text;
+
+            uint8_t ff;
         };
     };
 };
