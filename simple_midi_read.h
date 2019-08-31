@@ -260,8 +260,8 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
     all_tracks_start = buffer_read;
     total_num_events = 0;
 
-    printf("First pass\n");
-    START_TIMER()
+    /*printf("First pass\n");
+    START_TIMER()*/
     /* Add all tracks. */
     for (i = 0; i < file_data->ntracks; ++i)
     {
@@ -385,7 +385,7 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
         total_num_events += track_num_events;
     }
 
-    END_TIMER()
+    /*END_TIMER()*/
 
     total_alloc_size += total_num_events * sizeof(struct smr_event);
     file_data->_mem_block = (uint8_t*)malloc(total_alloc_size);
@@ -436,44 +436,28 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
             last_status_byte = status_byte;
 
             status_byte_top = status_byte & 0xF0;
-            if (status_byte_top >= 0x80 & status_byte_top < 0xF0)
+            if (status_byte_top < 0xF0)
             {
                 /* MIDI event */
                 event.event_type = status_byte_top;
                 /* Getting bottom nibble as channel. */
                 event.channel = status_byte & 0x0F;
 
-                switch (event.event_type)
+                if (event.event_type == Midi_PitchBend)
                 {
-                    case Midi_NoteOff:
-                    case Midi_NoteOn:
-                        event.note = get_next_byte(&buffer_read);
+                    /* TODO: Test this, I don't know that this is how the pitch bend value is supposed to be read in. */
+                    event.pitch_bend = get_next_short(&buffer_read);
+                }
+                else
+                {
+                    event.note = get_next_byte(&buffer_read);
+                    if (event.event_type < Midi_ProgramChange)
+                    {
                         event.velocity = get_next_byte(&buffer_read);
-                        break;
-                    case Midi_PolyphonicPressure:
-                        event.note = get_next_byte(&buffer_read);
-                        event.pressure = get_next_byte(&buffer_read);
-                        break;
-                    case Midi_Controller:
-                        event.controller = get_next_byte(&buffer_read);
-                        event.value = get_next_byte(&buffer_read);
-                        break;
-                    case Midi_ProgramChange:
-                        event.program = get_next_byte(&buffer_read);
-                        break;
-                    case Midi_ChannelPressure:
-                        event.pressure = get_next_byte(&buffer_read);
-                        break;
-                    case Midi_PitchBend:
-                        /* TODO: Test this, I don't know that this how the pitch bend value is supposed to be read in. */
-                        event.pitch_bend = get_next_short(&buffer_read);
-                        break;
-                    default:
-                        /* Can't happen. */
-                        break;
+                    }
                 }
             }
-            else if (status_byte == 0xF0 || status_byte == 0xF7)
+            else if (status_byte <= 0xF7)
             {
                 uint32_t message_index;
 
@@ -497,81 +481,64 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
                 event.event_type = meta_event_type | (status_byte << 8);
                 event.length = get_next_variable_length_int(&buffer_read);
 
-                switch (event.event_type)
+                if (event.event_type == Meta_SequenceNumber)
                 {
-                    case Meta_SequenceNumber:
-                        event.ss_ss = get_next_short(&buffer_read);
-                        break;
-                    case Meta_Text:
-                    case Meta_Copyright:
-                    case Meta_TrackName:
-                    case Meta_InstrumentName:
-                    case Meta_Lyric:
-                    case Meta_Marker:
-                    case Meta_CuePoint:
-                    case Meta_ProgramName:
-                    case Meta_DeviceName:
+                    event.ss_ss = get_next_short(&buffer_read);
+                    break;
+                }
+                else if (event.event_type <= Meta_DeviceName)
+                {
+                    uint32_t text_index;
+
+                    event.text = (char*)mem_ptr;
+
+                    for (text_index = 0; text_index < event.length; ++text_index)
                     {
-                        uint32_t text_index;
-
-                        event.text = (char*)mem_ptr;
-
-                        for (text_index = 0; text_index < event.length; ++text_index)
-                        {
-                            event.text[text_index] = (char)get_next_byte(&buffer_read);
-                        }
-
-                        /* Add null terminator. */
-                        event.text[event.length] = 0;
-                        mem_ptr += event.length + 1;
-                        break;
+                        event.text[text_index] = (char)get_next_byte(&buffer_read);
                     }
-                    case Meta_MidiChannelPrefix:
-                        event.cc = get_next_byte(&buffer_read);
-                        break;
-                    case Meta_MidiPort:
-                        event.pp = get_next_byte(&buffer_read);
-                        break;
-                    case Meta_EndOfTrack:
-                        /* Empty event. */
-                        break;
-                    case Meta_Tempo:
-                        event.tempo = get_next_int24(&buffer_read);
-                        break;
-                    case Meta_SmpteOffset:
-                        event.hr = get_next_byte(&buffer_read);
+
+                    /* Add null terminator. */
+                    event.text[event.length] = 0;
+                    mem_ptr += event.length + 1;
+                }
+                else if (event.event_type == Meta_MidiChannelPrefix)
+                {
+                    event.cc = get_next_byte(&buffer_read);
+                }
+                else if (event.event_type == Meta_Tempo)
+                {
+                    event.tempo = get_next_int24(&buffer_read);
+                }
+                else if (event.event_type == Meta_SequencerSpecificEvent)
+                {
+                    uint32_t data_index;
+
+                    event.data = (uint8_t*)mem_ptr;
+
+                    for (data_index = 0; data_index < event.length; ++data_index)
+                    {
+                        event.data[data_index] = (uint8_t) get_next_byte(&buffer_read);
+                    }
+
+                    mem_ptr += event.length;
+                    break;
+                }
+                else if (event.event_type != Meta_EndOfTrack)
+                {
+                    event.hr = get_next_byte(&buffer_read);
+                    if (event.event_type > Meta_MidiPort)
+                    {
                         event.mn = get_next_byte(&buffer_read);
-                        event.se = get_next_byte(&buffer_read);
-                        event.fr = get_next_byte(&buffer_read);
-                        event.ff = get_next_byte(&buffer_read);
-                        break;
-                    case Meta_TimeSignature:
-                        event.nn = get_next_byte(&buffer_read);
-                        event.dd = get_next_byte(&buffer_read);
-                        event.cc = get_next_byte(&buffer_read);
-                        event.bb = get_next_byte(&buffer_read);
-                        break;
-                    case Meta_KeySignature:
-                        event.sf = get_next_byte(&buffer_read);
-                        event.mi = get_next_byte(&buffer_read);
-                        break;
-                    case Meta_SequencerSpecificEvent:
-                    {
-                        uint32_t data_index;
-
-                        event.data = (uint8_t*)mem_ptr;
-
-                        for (data_index = 0; data_index < event.length; ++data_index)
+                        if (event.event_type < Meta_KeySignature)
                         {
-                            event.data[data_index] = (uint8_t) get_next_byte(&buffer_read);
+                            event.se = get_next_byte(&buffer_read);
+                            event.fr = get_next_byte(&buffer_read);
+                            if (event.event_type == Meta_SmpteOffset)
+                            {
+                                event.ff = get_next_byte(&buffer_read);
+                            }
                         }
-
-                        mem_ptr += event.length;
-                        break;
                     }
-                    default:
-                        /* Can't happen. */
-                        break;
                 }
             }
             else
