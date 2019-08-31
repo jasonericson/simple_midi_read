@@ -201,16 +201,20 @@ void print_midi_data(const struct smr_midi_data* midi_data)
 
 int main()
 {
-    struct smr_midi_data midi_data;
+    struct smr_midi_data beethoven1, beethoven2, beethoven3;
     int result;
 
-    result = smr_read_file("c_scale.mid", &midi_data);
+    result = smr_read_file("beethoven1.mid", &beethoven1);
+    result = smr_read_file("beethoven2.mid", &beethoven2);
+    result = smr_read_file("beethoven3.mid", &beethoven3);
     if (result != 0)
     {
         return result;
     }
 
-    print_midi_data(&midi_data);
+    /*print_midi_data(&midi_data);*/
 
-    smr_free_midi_data(&midi_data);
+    smr_free_midi_data(&beethoven1);
+    smr_free_midi_data(&beethoven2);
+    smr_free_midi_data(&beethoven3);
 }

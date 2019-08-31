@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "profiler_macos.h"
 
 static int32_t compare_next_string(uint8_t** buffer_read, const char* to_compare)
 {
@@ -205,7 +206,7 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
     uint8_t* buffer_read;
     uint32_t header_chunklen;
     int32_t i;
-    uint32_t total_alloc_size;
+    uint64_t total_alloc_size;
     uint8_t* mem_ptr;
     struct smr_event* event_ptr;
     uint8_t* all_tracks_start;
@@ -259,12 +260,15 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
     all_tracks_start = buffer_read;
     total_num_events = 0;
 
+    printf("First pass\n");
+    START_TIMER()
     /* Add all tracks. */
     for (i = 0; i < file_data->ntracks; ++i)
     {
         uint32_t track_chunklen;
         uint8_t* track_start;
         uint32_t track_num_events;
+        uint8_t last_status_byte;
 
         if (compare_next_string(&buffer_read, "MTrk") != 0)
         {
@@ -276,17 +280,34 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
         track_start = buffer_read;
 
         track_num_events = 0;
+        last_status_byte = 0xFF;
         /* TODO: Maybe ignore track length and just look for End of Track event? */
         while (buffer_read - track_start < track_chunklen)
         {
             uint32_t delta_time;
-            uint8_t status_byte;
-            uint8_t status_byte_top;
+            uint8_t status_byte, status_byte_top;
             enum smr_event_type event_type;
             uint32_t event_chunklen;
 
             delta_time = get_next_variable_length_int(&buffer_read);
             status_byte = get_next_byte(&buffer_read);
+
+            /* Check for running status. */
+            if (status_byte < 0x80)
+            {
+                if (last_status_byte >= 0xF0)
+                {
+                    printf("Currently not supporting running status for non-MIDI events.");
+                    return 1;
+                }
+
+                status_byte = last_status_byte;
+                /* Back up buffer so that value can be read again. */
+                buffer_read -= 1;
+            }
+
+            last_status_byte = status_byte;
+
             status_byte_top = status_byte & 0xF0;
             if (status_byte_top >= 0x80 & status_byte_top < 0xF0)
             {
@@ -364,6 +385,8 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
         total_num_events += track_num_events;
     }
 
+    END_TIMER()
+
     total_alloc_size += total_num_events * sizeof(struct smr_event);
     file_data->_mem_block = (uint8_t*)malloc(total_alloc_size);
     mem_ptr = file_data->_mem_block;
@@ -375,11 +398,14 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
     /* Rewind back to beginning of all track data. */
     buffer_read = all_tracks_start;
 
+    printf("Second pass\n");
+    START_TIMER()
     for (i = 0; i < file_data->ntracks; ++i)
     {
         struct smr_track_data track_data;
         uint32_t track_chunklen;
         uint8_t* track_start;
+        uint8_t last_status_byte;
 
         /* Skip reading track header. */
         buffer_read += 4;
@@ -399,6 +425,16 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
 
             event.delta_time = get_next_variable_length_int(&buffer_read);
             status_byte = get_next_byte(&buffer_read);
+
+            /* Check for running status. */
+            if (status_byte < 0x80)
+            {
+                status_byte = last_status_byte;
+                buffer_read -= 1;
+            }
+
+            last_status_byte = status_byte;
+
             status_byte_top = status_byte & 0xF0;
             if (status_byte_top >= 0x80 & status_byte_top < 0xF0)
             {
@@ -540,6 +576,7 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
             }
             else
             {
+                /* Running status */
                 printf("\nDo not recognize status byte %0.2x.\n", status_byte & 0xFF);
                 return 1;
             }
@@ -552,7 +589,8 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
         file_data->tracks[i] = track_data;
     }
 
-    printf("Finished reading file!\n\n");
+    END_TIMER()
+
     return 0;
 }
 
