@@ -1,74 +1,14 @@
+#ifndef SMR_HEADER
+#define SMR_HEADER
+
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-static int32_t compare_next_string(uint8_t** buffer_read, const char* to_compare)
-{
-    int32_t result;
-    int32_t string_length;
-
-    string_length = strlen(to_compare);
-    result = strncmp((char*)*buffer_read, to_compare, string_length);
-    *buffer_read += string_length;
-
-    return result;
-}
-
-static uint8_t get_next_uint8(uint8_t** buffer_read)
-{
-    uint8_t result;
-
-    result = (*buffer_read)[0];
-    *buffer_read += 1;
-
-    return result;
-}
-
-static uint32_t get_next_uint24(uint8_t** buffer_read)
-{
-    uint32_t result;
-
-    result = 0;
-    result = (*buffer_read)[2] | ((*buffer_read)[1] << 8) | ((*buffer_read)[0] << 16);
-    *buffer_read += 3;
-
-    return result;
-}
-
-static uint16_t get_next_uint16(uint8_t** buffer_read)
-{
-    uint16_t result;
-
-    result = (*buffer_read)[1] | (*buffer_read)[0] << 8;
-    *buffer_read += 2;
-
-    return result;
-}
-
-/* TODO: Check for endian-ness */
-static uint32_t get_next_uint32(uint8_t** buffer_read)
-{
-    uint32_t result;
-
-    result = (*buffer_read)[3] | ((*buffer_read)[2] << 8) | ((*buffer_read)[1] << 16) | ((*buffer_read)[0] << 24);
-    *buffer_read += 4;
-
-    return result;
-}
-
-static uint32_t get_next_variable_length_int(uint8_t** buffer_read)
-{
-    uint32_t result;
-
-    result = 0;
-    do
-    {
-        result = (result << 7) | (uint32_t)(**buffer_read & 0x7F);
-    } while (*(*buffer_read)++ & 0x80);
-
-    return result;
-}
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 enum smr_time_type
 {
@@ -163,6 +103,94 @@ struct smr_midi_data
     struct smr_track_data* tracks;
     uint8_t* _mem_block;
 };
+
+static int32_t compare_next_string(uint8_t** buffer_read, const char* to_compare);
+static uint8_t get_next_uint8(uint8_t** buffer_read);
+static uint32_t get_next_uint24(uint8_t** buffer_read);
+static uint16_t get_next_uint16(uint8_t** buffer_read);
+static uint32_t get_next_uint32(uint8_t** buffer_read);
+static uint32_t get_next_variable_length_int(uint8_t** buffer_read);
+
+int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data);
+int smr_read_file(const char* filename, struct smr_midi_data* file_data);
+int smr_free_midi_data(struct smr_midi_data* midi_data);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* SMR_HEADER */
+
+/* END OF HEADER */
+
+#ifdef SMR_IMPLEMENTATION
+
+static int32_t compare_next_string(uint8_t** buffer_read, const char* to_compare)
+{
+    int32_t result;
+    int32_t string_length;
+
+    string_length = strlen(to_compare);
+    result = strncmp((char*)*buffer_read, to_compare, string_length);
+    *buffer_read += string_length;
+
+    return result;
+}
+
+static uint8_t get_next_uint8(uint8_t** buffer_read)
+{
+    uint8_t result;
+
+    result = (*buffer_read)[0];
+    *buffer_read += 1;
+
+    return result;
+}
+
+static uint32_t get_next_uint24(uint8_t** buffer_read)
+{
+    uint32_t result;
+
+    result = 0;
+    result = (*buffer_read)[2] | ((*buffer_read)[1] << 8) | ((*buffer_read)[0] << 16);
+    *buffer_read += 3;
+
+    return result;
+}
+
+static uint16_t get_next_uint16(uint8_t** buffer_read)
+{
+    uint16_t result;
+
+    result = (*buffer_read)[1] | (*buffer_read)[0] << 8;
+    *buffer_read += 2;
+
+    return result;
+}
+
+/* TODO: Check for endian-ness */
+static uint32_t get_next_uint32(uint8_t** buffer_read)
+{
+    uint32_t result;
+
+    result = (*buffer_read)[3] | ((*buffer_read)[2] << 8) | ((*buffer_read)[1] << 16) | ((*buffer_read)[0] << 24);
+    *buffer_read += 4;
+
+    return result;
+}
+
+static uint32_t get_next_variable_length_int(uint8_t** buffer_read)
+{
+    uint32_t result;
+
+    result = 0;
+    do
+    {
+        result = (result << 7) | (uint32_t)(**buffer_read & 0x7F);
+    } while (*(*buffer_read)++ & 0x80);
+
+    return result;
+}
 
 int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
 {
@@ -273,7 +301,7 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
             if (status_byte_top >= 0x80 & status_byte_top < 0xF0)
             {
                 /* MIDI event */
-                event_type = status_byte_top;
+                event_type = (enum smr_event_type)status_byte_top;
                 /* Bottom nibble = channel */
 
                 switch (event_type)
@@ -299,7 +327,7 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
             else if (status_byte == 0xF0 || status_byte == 0xF7)
             {
                 /* SysEx event */
-                event_type = status_byte;
+                event_type = (enum smr_event_type)status_byte;
                 event_chunklen = get_next_variable_length_int(&buffer_read);
 
                 total_alloc_size += event_chunklen;
@@ -309,7 +337,7 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
                 uint8_t meta_event_type;
 
                 meta_event_type = get_next_uint8(&buffer_read);
-                event_type = meta_event_type | (status_byte << 8);
+                event_type = (enum smr_event_type)(meta_event_type | (status_byte << 8));
                 event_chunklen = get_next_variable_length_int(&buffer_read);
 
                 switch (event_type)
@@ -396,7 +424,7 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
             if (status_byte_top >= 0x80 & status_byte_top < 0xF0)
             {
                 /* MIDI event */
-                event.event_type = status_byte_top;
+                event.event_type = (enum smr_event_type)status_byte_top;
                 /* Getting bottom nibble as channel. */
                 event.channel = status_byte & 0x0F;
 
@@ -435,7 +463,7 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
                 uint32_t message_index;
 
                 /* SysEx event */
-                event.event_type = status_byte;
+                event.event_type = (enum smr_event_type)status_byte;
                 event.length = get_next_variable_length_int(&buffer_read);
                 event.message = (uint8_t*)mem_ptr;
 
@@ -451,7 +479,7 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
                 uint8_t meta_event_type;
 
                 meta_event_type = get_next_uint8(&buffer_read);
-                event.event_type = meta_event_type | (status_byte << 8);
+                event.event_type = (enum smr_event_type)(meta_event_type | (status_byte << 8));
                 event.length = get_next_variable_length_int(&buffer_read);
 
                 switch (event.event_type)
@@ -549,7 +577,7 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
     return 0;
 }
 
-int smr_read_file(char* filename, struct smr_midi_data* file_data)
+int smr_read_file(const char* filename, struct smr_midi_data* file_data)
 {
     FILE* file_ptr;
     long int file_size;
@@ -586,3 +614,5 @@ int smr_free_midi_data(struct smr_midi_data* midi_data)
 
     return 0;
 }
+
+#endif /* SMR_IMPLEMENTATION */
