@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "profiler_macos.h"
 
 static int32_t compare_next_string(uint8_t** buffer_read, const char* to_compare)
 {
@@ -16,7 +15,7 @@ static int32_t compare_next_string(uint8_t** buffer_read, const char* to_compare
     return result;
 }
 
-static uint8_t get_next_byte(uint8_t** buffer_read)
+static uint8_t get_next_uint8(uint8_t** buffer_read)
 {
     uint8_t result;
 
@@ -26,18 +25,7 @@ static uint8_t get_next_byte(uint8_t** buffer_read)
     return result;
 }
 
-/* TODO: Check for endian-ness */
-static uint32_t get_next_int(uint8_t** buffer_read)
-{
-    uint32_t result;
-
-    result = (*buffer_read)[3] | ((*buffer_read)[2] << 8) | ((*buffer_read)[1] << 16) | ((*buffer_read)[0] << 24);
-    *buffer_read += 4;
-
-    return result;
-}
-
-static uint32_t get_next_int24(uint8_t** buffer_read)
+static uint32_t get_next_uint24(uint8_t** buffer_read)
 {
     uint32_t result;
 
@@ -48,13 +36,23 @@ static uint32_t get_next_int24(uint8_t** buffer_read)
     return result;
 }
 
-/* TODO: Figure out fixed-width implementation if possible. */
-static uint16_t get_next_short(uint8_t** buffer_read)
+static uint16_t get_next_uint16(uint8_t** buffer_read)
 {
     uint16_t result;
 
     result = (*buffer_read)[1] | (*buffer_read)[0] << 8;
     *buffer_read += 2;
+
+    return result;
+}
+
+/* TODO: Check for endian-ness */
+static uint32_t get_next_uint32(uint8_t** buffer_read)
+{
+    uint32_t result;
+
+    result = (*buffer_read)[3] | ((*buffer_read)[2] << 8) | ((*buffer_read)[1] << 16) | ((*buffer_read)[0] << 24);
+    *buffer_read += 4;
 
     return result;
 }
@@ -74,41 +72,41 @@ static uint32_t get_next_variable_length_int(uint8_t** buffer_read)
 
 enum smr_time_type
 {
-    SMR_TT_metrical,
-    SMR_TT_timecode
+    SMRE_metrical,
+    SMRE_timecode
 };
 
 enum smr_event_type
 {
-    Midi_NoteOff = 0x80,
-    Midi_NoteOn = 0x90,
-    Midi_PolyphonicPressure = 0xA0,
-    Midi_Controller = 0xB0,
-    Midi_ProgramChange = 0xC0,
-    Midi_ChannelPressure = 0xD0,
-    Midi_PitchBend = 0xE0,
+    SMRE_midi_note_off = 0x80,
+    SMRE_midi_note_on = 0x90,
+    SMRE_midi_polyphonic_pressure = 0xA0,
+    SMRE_midi_controller = 0xB0,
+    SMRE_midi_program_change = 0xC0,
+    SMRE_midi_channel_pressure = 0xD0,
+    SMRE_midi_pitch_bend = 0xE0,
 
-    SysEx_Single = 0xF0,
-    SysEx_Escape = 0xF7,
+    SMRE_sysex_single = 0xF0,
+    SMRE_sysex_escape = 0xF7,
 
-    Meta_SequenceNumber = 0xFF00,
-    Meta_Text = 0xFF01,
-    Meta_Copyright = 0xFF02,
-    Meta_TrackName = 0xFF03,
-    Meta_InstrumentName = 0xFF04,
-    Meta_Lyric = 0xFF05,
-    Meta_Marker = 0xFF06,
-    Meta_CuePoint = 0xFF07,
-    Meta_ProgramName = 0xFF08,
-    Meta_DeviceName = 0xFF09,
-    Meta_MidiChannelPrefix = 0xFF20,
-    Meta_MidiPort = 0xFF21,
-    Meta_EndOfTrack = 0xFF2F,
-    Meta_Tempo = 0xFF51,
-    Meta_SmpteOffset = 0xFF54,
-    Meta_TimeSignature = 0xFF58,
-    Meta_KeySignature = 0xFF59,
-    Meta_SequencerSpecificEvent = 0xFF7F
+    SMRE_meta_sequence_number = 0xFF00,
+    SMRE_meta_text = 0xFF01,
+    SMRE_meta_copyright = 0xFF02,
+    SMRE_meta_track_name = 0xFF03,
+    SMRE_meta_instrument_name = 0xFF04,
+    SMRE_meta_lyric = 0xFF05,
+    SMRE_meta_marker = 0xFF06,
+    SMRE_meta_cue_point = 0xFF07,
+    SMRE_meta_program_name = 0xFF08,
+    SMRE_meta_device_name = 0xFF09,
+    SMRE_meta_midi_channel_prefix = 0xFF20,
+    SMRE_meta_midi_port = 0xFF21,
+    SMRE_meta_end_of_track = 0xFF2F,
+    SMRE_meta_tempo = 0xFF51,
+    SMRE_meta_smpte_offset = 0xFF54,
+    SMRE_meta_time_signature = 0xFF58,
+    SMRE_meta_key_signature = 0xFF59,
+    SMRE_meta_sequencer_specific_event = 0xFF7F
 };
 
 struct smr_event
@@ -121,57 +119,22 @@ struct smr_event
         union
         {
             uint32_t length;
-
             struct
             {
-                union
-                {
-                    uint8_t note;
-                    uint8_t controller;
-                    uint8_t program;
-                    uint8_t pp;
-                    uint8_t hr;
-                    uint8_t nn;
-                    uint8_t sf;
-                };
-
-                union
-                {
-                    uint8_t velocity;
-                    uint8_t pressure;
-                    uint8_t value;
-                    uint8_t mn;
-                    uint8_t dd;
-                    uint8_t mi;
-                };
-
-                union
-                {
-                    uint8_t channel;
-                    uint8_t se;
-                    uint8_t cc;
-                };
-
-                union
-                {
-                    uint8_t fr;
-                    uint8_t bb;
-                };
+                /* I typically avoid multiple declarations on a single line, but
+                   this all takes up far too much vertical space otherwise. */
+                union { uint8_t note, controller, program, pp, hr, nn, sf; };
+                union { uint8_t velocity, pressure, value, mn, dd, mi; };
+                union { uint8_t channel, se, cc; };
+                union { uint8_t fr, bb; };
             };
-
-            uint16_t pitch_bend;
-            uint16_t ss_ss;
+            uint16_t pitch_bend, ss_ss;
         };
-
         union
         {
-            uint8_t* message;
-            uint8_t* bytes;
-            uint8_t* data;
+            uint8_t *message, *bytes, *data;
             char* text;
-
             uint32_t tempo;
-
             uint8_t ff;
         };
     };
@@ -224,7 +187,7 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
 
     /* Check for header chunklen */
     /* TODO: Standardize when buffer pointer advances. */
-    header_chunklen = get_next_int(&buffer_read);
+    header_chunklen = get_next_uint32(&buffer_read);
     if (header_chunklen != 6)
     {
         printf("This MIDI file is not compatible with this version of the parser.\n");
@@ -233,35 +196,33 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
         return 1;
     }
 
-    file_data->format = get_next_short(&buffer_read);
+    file_data->format = get_next_uint16(&buffer_read);
     if (file_data->format > 2)
     {
         printf("Do not recognize MIDI format %hu.\n", file_data->format);
         /*return 1;*/
     }
 
-    file_data->ntracks = get_next_short(&buffer_read);
+    file_data->ntracks = get_next_uint16(&buffer_read);
 
     if (buffer_read[0] & (1<<15))
     {
         /* TODO: Test timecode */
-        file_data->time_type = SMR_TT_timecode;
+        file_data->time_type = SMRE_timecode;
         /* FPS comes in as a negative value for some reason, this flips it to positive. */
-        file_data->fps = 0 - get_next_byte(&buffer_read);
-        file_data->subframe_resolution = get_next_byte(&buffer_read);
+        file_data->fps = 0 - get_next_uint8(&buffer_read);
+        file_data->subframe_resolution = get_next_uint8(&buffer_read);
     }
     else
     {
-        file_data->time_type = SMR_TT_metrical;
-        file_data->tickdiv = get_next_short(&buffer_read);
+        file_data->time_type = SMRE_metrical;
+        file_data->tickdiv = get_next_uint16(&buffer_read);
     }
 
     total_alloc_size = file_data->ntracks * sizeof(struct smr_track_data);
     all_tracks_start = buffer_read;
     total_num_events = 0;
 
-    printf("First pass\n");
-    START_TIMER()
     /* Add all tracks. */
     for (i = 0; i < file_data->ntracks; ++i)
     {
@@ -276,7 +237,7 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
             return 1;
         }
 
-        track_chunklen = get_next_int(&buffer_read);
+        track_chunklen = get_next_uint32(&buffer_read);
         track_start = buffer_read;
 
         track_num_events = 0;
@@ -290,7 +251,7 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
             uint32_t event_chunklen;
 
             delta_time = get_next_variable_length_int(&buffer_read);
-            status_byte = get_next_byte(&buffer_read);
+            status_byte = get_next_uint8(&buffer_read);
 
             /* Check for running status. */
             if (status_byte < 0x80)
@@ -317,20 +278,21 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
 
                 switch (event_type)
                 {
-                    case Midi_NoteOff:
-                    case Midi_NoteOn:
-                    case Midi_PolyphonicPressure:
-                    case Midi_Controller:
-                    case Midi_PitchBend:
+                    case SMRE_midi_note_off:
+                    case SMRE_midi_note_on:
+                    case SMRE_midi_polyphonic_pressure:
+                    case SMRE_midi_controller:
+                    case SMRE_midi_pitch_bend:
                         event_chunklen = 2;
                         break;
 
-                    case Midi_ProgramChange:
-                    case Midi_ChannelPressure:
+                    case SMRE_midi_program_change:
+                    case SMRE_midi_channel_pressure:
                         event_chunklen = 1;
                         break;
                     default:
                         /* Can't happen. */
+                        event_chunklen = 0; /* <- Appeasing compiler warnings. */
                         break;
                 }
             }
@@ -346,25 +308,25 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
             {
                 uint8_t meta_event_type;
 
-                meta_event_type = get_next_byte(&buffer_read);
+                meta_event_type = get_next_uint8(&buffer_read);
                 event_type = meta_event_type | (status_byte << 8);
                 event_chunklen = get_next_variable_length_int(&buffer_read);
 
                 switch (event_type)
                 {
-                    case Meta_Text:
-                    case Meta_Copyright:
-                    case Meta_TrackName:
-                    case Meta_InstrumentName:
-                    case Meta_Lyric:
-                    case Meta_Marker:
-                    case Meta_CuePoint:
-                    case Meta_ProgramName:
-                    case Meta_DeviceName:
+                    case SMRE_meta_text:
+                    case SMRE_meta_copyright:
+                    case SMRE_meta_track_name:
+                    case SMRE_meta_instrument_name:
+                    case SMRE_meta_lyric:
+                    case SMRE_meta_marker:
+                    case SMRE_meta_cue_point:
+                    case SMRE_meta_program_name:
+                    case SMRE_meta_device_name:
                         /* Allocating 1 extra byte for text, to add null terminator. */
                         total_alloc_size += event_chunklen + 1;
                         break;
-                    case Meta_SequencerSpecificEvent:
+                    case SMRE_meta_sequencer_specific_event:
                         total_alloc_size += event_chunklen;
                         break;
                     default:
@@ -385,8 +347,6 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
         total_num_events += track_num_events;
     }
 
-    END_TIMER()
-
     total_alloc_size += total_num_events * sizeof(struct smr_event);
     file_data->_mem_block = (uint8_t*)malloc(total_alloc_size);
     mem_ptr = file_data->_mem_block;
@@ -398,8 +358,6 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
     /* Rewind back to beginning of all track data. */
     buffer_read = all_tracks_start;
 
-    printf("Second pass\n");
-    START_TIMER()
     for (i = 0; i < file_data->ntracks; ++i)
     {
         struct smr_track_data track_data;
@@ -410,7 +368,7 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
         /* Skip reading track header. */
         buffer_read += 4;
 
-        track_chunklen = get_next_int(&buffer_read);
+        track_chunklen = get_next_uint32(&buffer_read);
         track_start = buffer_read;
         track_data.events = event_ptr;
 
@@ -421,10 +379,9 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
             struct smr_event event;
             uint8_t status_byte;
             uint8_t status_byte_top;
-            uint32_t event_chunklen;
 
             event.delta_time = get_next_variable_length_int(&buffer_read);
-            status_byte = get_next_byte(&buffer_read);
+            status_byte = get_next_uint8(&buffer_read);
 
             /* Check for running status. */
             if (status_byte < 0x80)
@@ -445,28 +402,28 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
 
                 switch (event.event_type)
                 {
-                    case Midi_NoteOff:
-                    case Midi_NoteOn:
-                        event.note = get_next_byte(&buffer_read);
-                        event.velocity = get_next_byte(&buffer_read);
+                    case SMRE_midi_note_off:
+                    case SMRE_midi_note_on:
+                        event.note = get_next_uint8(&buffer_read);
+                        event.velocity = get_next_uint8(&buffer_read);
                         break;
-                    case Midi_PolyphonicPressure:
-                        event.note = get_next_byte(&buffer_read);
-                        event.pressure = get_next_byte(&buffer_read);
+                    case SMRE_midi_polyphonic_pressure:
+                        event.note = get_next_uint8(&buffer_read);
+                        event.pressure = get_next_uint8(&buffer_read);
                         break;
-                    case Midi_Controller:
-                        event.controller = get_next_byte(&buffer_read);
-                        event.value = get_next_byte(&buffer_read);
+                    case SMRE_midi_controller:
+                        event.controller = get_next_uint8(&buffer_read);
+                        event.value = get_next_uint8(&buffer_read);
                         break;
-                    case Midi_ProgramChange:
-                        event.program = get_next_byte(&buffer_read);
+                    case SMRE_midi_program_change:
+                        event.program = get_next_uint8(&buffer_read);
                         break;
-                    case Midi_ChannelPressure:
-                        event.pressure = get_next_byte(&buffer_read);
+                    case SMRE_midi_channel_pressure:
+                        event.pressure = get_next_uint8(&buffer_read);
                         break;
-                    case Midi_PitchBend:
+                    case SMRE_midi_pitch_bend:
                         /* TODO: Test this, I don't know that this how the pitch bend value is supposed to be read in. */
-                        event.pitch_bend = get_next_short(&buffer_read);
+                        event.pitch_bend = get_next_uint16(&buffer_read);
                         break;
                     default:
                         /* Can't happen. */
@@ -484,7 +441,7 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
 
                 for (message_index = 0; message_index < event.length; ++message_index)
                 {
-                    event.message[message_index] = get_next_byte(&buffer_read);
+                    event.message[message_index] = get_next_uint8(&buffer_read);
                 }
 
                 mem_ptr += event.length;
@@ -493,24 +450,24 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
             {
                 uint8_t meta_event_type;
 
-                meta_event_type = get_next_byte(&buffer_read);
+                meta_event_type = get_next_uint8(&buffer_read);
                 event.event_type = meta_event_type | (status_byte << 8);
                 event.length = get_next_variable_length_int(&buffer_read);
 
                 switch (event.event_type)
                 {
-                    case Meta_SequenceNumber:
-                        event.ss_ss = get_next_short(&buffer_read);
+                    case SMRE_meta_sequence_number:
+                        event.ss_ss = get_next_uint16(&buffer_read);
                         break;
-                    case Meta_Text:
-                    case Meta_Copyright:
-                    case Meta_TrackName:
-                    case Meta_InstrumentName:
-                    case Meta_Lyric:
-                    case Meta_Marker:
-                    case Meta_CuePoint:
-                    case Meta_ProgramName:
-                    case Meta_DeviceName:
+                    case SMRE_meta_text:
+                    case SMRE_meta_copyright:
+                    case SMRE_meta_track_name:
+                    case SMRE_meta_instrument_name:
+                    case SMRE_meta_lyric:
+                    case SMRE_meta_marker:
+                    case SMRE_meta_cue_point:
+                    case SMRE_meta_program_name:
+                    case SMRE_meta_device_name:
                     {
                         uint32_t text_index;
 
@@ -518,7 +475,7 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
 
                         for (text_index = 0; text_index < event.length; ++text_index)
                         {
-                            event.text[text_index] = (char)get_next_byte(&buffer_read);
+                            event.text[text_index] = (char)get_next_uint8(&buffer_read);
                         }
 
                         /* Add null terminator. */
@@ -526,36 +483,36 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
                         mem_ptr += event.length + 1;
                         break;
                     }
-                    case Meta_MidiChannelPrefix:
-                        event.cc = get_next_byte(&buffer_read);
+                    case SMRE_meta_midi_channel_prefix:
+                        event.cc = get_next_uint8(&buffer_read);
                         break;
-                    case Meta_MidiPort:
-                        event.pp = get_next_byte(&buffer_read);
+                    case SMRE_meta_midi_port:
+                        event.pp = get_next_uint8(&buffer_read);
                         break;
-                    case Meta_EndOfTrack:
+                    case SMRE_meta_end_of_track:
                         /* Empty event. */
                         break;
-                    case Meta_Tempo:
-                        event.tempo = get_next_int24(&buffer_read);
+                    case SMRE_meta_tempo:
+                        event.tempo = get_next_uint24(&buffer_read);
                         break;
-                    case Meta_SmpteOffset:
-                        event.hr = get_next_byte(&buffer_read);
-                        event.mn = get_next_byte(&buffer_read);
-                        event.se = get_next_byte(&buffer_read);
-                        event.fr = get_next_byte(&buffer_read);
-                        event.ff = get_next_byte(&buffer_read);
+                    case SMRE_meta_smpte_offset:
+                        event.hr = get_next_uint8(&buffer_read);
+                        event.mn = get_next_uint8(&buffer_read);
+                        event.se = get_next_uint8(&buffer_read);
+                        event.fr = get_next_uint8(&buffer_read);
+                        event.ff = get_next_uint8(&buffer_read);
                         break;
-                    case Meta_TimeSignature:
-                        event.nn = get_next_byte(&buffer_read);
-                        event.dd = get_next_byte(&buffer_read);
-                        event.cc = get_next_byte(&buffer_read);
-                        event.bb = get_next_byte(&buffer_read);
+                    case SMRE_meta_time_signature:
+                        event.nn = get_next_uint8(&buffer_read);
+                        event.dd = get_next_uint8(&buffer_read);
+                        event.cc = get_next_uint8(&buffer_read);
+                        event.bb = get_next_uint8(&buffer_read);
                         break;
-                    case Meta_KeySignature:
-                        event.sf = get_next_byte(&buffer_read);
-                        event.mi = get_next_byte(&buffer_read);
+                    case SMRE_meta_key_signature:
+                        event.sf = get_next_uint8(&buffer_read);
+                        event.mi = get_next_uint8(&buffer_read);
                         break;
-                    case Meta_SequencerSpecificEvent:
+                    case SMRE_meta_sequencer_specific_event:
                     {
                         uint32_t data_index;
 
@@ -563,7 +520,7 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
 
                         for (data_index = 0; data_index < event.length; ++data_index)
                         {
-                            event.data[data_index] = (uint8_t) get_next_byte(&buffer_read);
+                            event.data[data_index] = (uint8_t) get_next_uint8(&buffer_read);
                         }
 
                         mem_ptr += event.length;
@@ -588,8 +545,6 @@ int smr_read_byte_array(uint8_t* buffer, struct smr_midi_data* file_data)
 
         file_data->tracks[i] = track_data;
     }
-
-    END_TIMER()
 
     return 0;
 }
